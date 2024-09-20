@@ -1,14 +1,8 @@
 <?php
 $startTime = microtime(true);
 
-
-/**
- * 
- */
-
 $error = false;
 $mapShareUrl = $kmlFeedUrl = '';
-
 
 if (isset($_GET['q'])) {
     if (isValidUrl($_GET['q'])) {
@@ -29,10 +23,11 @@ if (isset($_GET['q'])) {
     $kmlFeedUrl = 'https://inreach.garmin.com/feed/share/DJFOX';
 }
 
-$kmh = 0;
-$mph = 0;
 
-$str = $last = '';
+
+$coordinatesString = $lastTimestamp = '';
+$kmh = $mph = 0;
+
 if (!isValidUrl($kmlFeedUrl)) {
     $error = true;
 } else {
@@ -48,52 +43,55 @@ if (!isValidUrl($kmlFeedUrl)) {
     } catch (Exception $e) {
         $error = true;
     }
-}
 
+    if (!$error) {
+        // Iterate over all placemarks
+        foreach ($kml->xpath('//kml:Placemark') as $placemark) {
 
-
-
-if (!$error) {
-    // Iterate over all placemarks
-    foreach ($kml->xpath('//kml:Placemark') as $placemark) {
-
-        // Get the name of the placemark
-        if (isset($placemark->name)) {
-            $name = (string) $placemark->name;
-        }
-
-        // echo "Placemark Name: $name\n<br/>";
-
-
-        // echo "<br>";
-        // Accessing custom attributes (ExtendedData)
-        if ($placemark->ExtendedData) {
-            foreach ($placemark->ExtendedData->Data as $data) {
-                $attrName = (string) $data['name']; // attribute name
-                $attrValue = (string) $data->value; // attribute value
-
-                // echo "$attrName: $attrValue<br>";
-                if ($attrName == 'Time') {
-                    $last = $attrValue;
-                }
-
-                if ($attrName == 'Latitude') {
-                    $str .= "$attrValue, ";
-                }
-
-                if ($attrName == 'Longitude')
-                    $str .= "$attrValue";
-
-                if ($attrName == 'Velocity')
-                    $mph = kmhToMph($attrValue);
+            // Get the name of the placemark
+            if (isset($placemark->name)) {
+                $name = (string) $placemark->name;
             }
+
+            // echo "Placemark Name: $name\n<br/>";
+
+
+            // echo "<br>";
+            // Accessing custom attributes (ExtendedData)
+            if ($placemark->ExtendedData) {
+                foreach ($placemark->ExtendedData->Data as $data) {
+                    $attrName = (string) $data['name']; // attribute name
+                    $attrValue = (string) $data->value; // attribute value
+
+                    // echo "$attrName: $attrValue<br>";
+                    if ($attrName == 'Time') {
+                        $lastTimestamp = $attrValue;
+                    }
+
+                    if ($attrName == 'Latitude') {
+                        $coordinatesString .= "$attrValue, ";
+                    }
+
+                    if ($attrName == 'Longitude') {
+                        $coordinatesString .= "$attrValue";
+                    }
+
+                    if ($attrName == 'Velocity') {
+                        if (strpos($attrValue, 'km/h') !== false) {
+                            $mph = kmhToMph($attrValue);
+                        } else {
+                            $mph = $attrValue;
+                        }
+                    }
+                }
+            }
+
+            // echo "<br/><br/>";
         }
 
-        // echo "<br/><br/>";
+        $dest = urlencode($coordinatesString);
+        $google = "https://www.google.com/maps/dir/?api=1&destination=$dest&travelmode=walking";
     }
-
-    $dest = urlencode($str);
-    $google = "https://www.google.com/maps/dir/?api=1&destination=$dest&travelmode=walking";
 }
 
 ?>
@@ -102,88 +100,89 @@ if (!$error) {
 <html lang="en">
 
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>garmin quick copy</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TrailView - KML</title>
 </head>
 
 <body>
-  <hr />
-  <strong>Garmin Data for: '<?php echo $name; ?>'</strong>
-  <br>
-  <strong>Last update <?php echo $last ?></strong>
-  <br>
-  <strong>speed: <?php echo $mph; ?> mph</strong>
-  <br>
-  <input type="text" id="textToCopy" value="<?php echo $str ?>" />
-  <button onclick="copyToClipboard()">Copy Coordinates to Clipboard</button>
-  <br><br>
-  <button onclick="refreshPage()">Refresh Page</button>
+    <?php if ($error): ?>
+        <strong>An error has occurred.</strong>
+    <?php else: ?>
+        <hr />
+        <strong>Garmin Data for: '<?php echo $name; ?>'</strong>
+        <br>
+        <strong>Last update <?php echo $lastTimestamp ?></strong>
+        <br>
+        <strong>speed: <?php echo $mph; ?> mph</strong>
+        <br>
+        <input type="text" id="textToCopy" value="<?php echo $coordinatesString ?>" />
+        <button onclick="copyToClipboard()">Copy Coordinates to Clipboard</button>
+        <br><br>
+        <button onclick="refreshPage()">Refresh Page</button>
 
 
-  <br><br><br>
-  <a href="<?php echo $google ?>">open google maps from your location to dj</a>
+        <br><br><br>
+        <a href="<?php echo $google ?>">open google maps from your location to dj</a>
 
-  <br><br><br>
+        <br><br><br>
+        <a href="<?php echo $mapShareUrl; ?>" target="_blank">garmin map share</a>
 
-  <a href="<?php echo $mapShareUrl; ?>" target="_blank">garmin map share</a>
+        <script>
+            function refreshPage() {
+                location.reload();
+            }
 
-  <script>
-  function refreshPage() {
-    location.reload();
-  }
+            function copyToClipboard() {
+                const text = document.getElementById('textToCopy').value;
 
-  function copyToClipboard() {
-    const text = document.getElementById('textToCopy').value;
+                if (navigator.clipboard && window.isSecureContext) {
+                    // Use the Clipboard API
+                    navigator.clipboard.writeText(text);
+                } else {
+                    // Fallback for older browsers
+                    const textArea = document.createElement('textarea');
+                    textArea.value = text;
 
-    if (navigator.clipboard && window.isSecureContext) {
-      // Use the Clipboard API
-      navigator.clipboard.writeText(text);
-    } else {
-      // Fallback for older browsers
-      const textArea = document.createElement('textarea');
-      textArea.value = text;
+                    // Avoid scrolling to bottom
+                    textArea.style.position = 'fixed';
+                    textArea.style.top = '0';
+                    textArea.style.left = '0';
 
-      // Avoid scrolling to bottom
-      textArea.style.position = 'fixed';
-      textArea.style.top = '0';
-      textArea.style.left = '0';
+                    document.body.appendChild(textArea);
+                    textArea.focus();
+                    textArea.select();
 
-      document.body.appendChild(textArea);
-      textArea.focus();
-      textArea.select();
+                    try {
+                        document.execCommand('copy');
+                    } catch (err) {
+                        console.log('Failed to copy text: ', err);
+                    }
+                }
 
-      try {
-        document.execCommand('copy');
-      } catch (err) {
-        console.log('Failed to copy text: ', err);
-      }
-
-      document.body.removeChild(textArea);
-    }
-  }
-  </script>
-  <footer>
-    <?php
+                document.body.removeChild(textArea);
+            }
+        </script>
+    <?php endif; ?>
+    <br><br><br>
+    <footer>
+        <?php
         $endTime = microtime(true);
-
-        // Calculate the time taken
         $executionTime = $endTime - $startTime;
         echo "Page loaded in $executionTime seconds.";
         ?>
 
-  </footer>
+    </footer>
 </body>
-
 
 </html>
 
 <?php
 
 /**
- * Undocumented function
+ * Check is a url is valid
  *
- * @param [type] $kmlFeedUrl
+ * @param string $kmlFeedUrl
  * @return boolean
  */
 function isValidUrl($kmlFeedUrl)
@@ -192,10 +191,10 @@ function isValidUrl($kmlFeedUrl)
 }
 
 /**
- * Undocumented function
+ * Convert km/h to mi/h 
  *
- * @param [type] $kmh
- * @return void
+ * @param int|float $kmh
+ * @return int|float
  */
 function kmhToMph($kmh)
 {
@@ -206,10 +205,10 @@ function kmhToMph($kmh)
 }
 
 /**
- * Undocumented function
+ * Get user id from url
  *
- * @param [type] $s
- * @return void
+ * @param string $s
+ * @return string
  */
 function getMapId($s)
 {
